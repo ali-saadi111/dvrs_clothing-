@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DVRS — Fitting Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0B0B0C; --floor:#151517; --panel:rgba(26,26,28,.70); --line:rgba(255,255,255,.08);
+  --text:#F2F2F3; --muted:#8A8A8E; --dur:350ms; --ease:cubic-bezier(.22,.61,.36,1);
+  /* set by layout() */
+  --mh:760px; --mw:430px; --mtop:52px; --hor:575px; --pool:775px; --cardY:356px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible{outline:1px solid rgba(255,255,255,.7);outline-offset:3px}
+.label{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500}
+
+/* ---------- studio ---------- */
+.stage{position:fixed;inset:0;overflow:hidden;user-select:none;-webkit-user-select:none}
+.wall{position:absolute;left:0;right:0;top:0;height:var(--hor);
+  background:
+    linear-gradient(to bottom,rgba(15,15,16,0) 72%,rgba(13,13,14,.92) 100%),
+    radial-gradient(ellipse 46% 62% at 50% 52%,#222225 0%,#18181a 42%,#0f0f10 75%,#0b0b0c 100%)}
+.wordmark{position:absolute;inset:0;overflow:hidden;pointer-events:none;
+  -webkit-mask-image:radial-gradient(ellipse 52% 70% at 50% 52%,#000 0%,rgba(0,0,0,.75) 40%,transparent 82%);
+          mask-image:radial-gradient(ellipse 52% 70% at 50% 52%,#000 0%,rgba(0,0,0,.75) 40%,transparent 82%)}
+.wordmark .row{position:absolute;left:50%;white-space:nowrap;font-weight:900;letter-spacing:.04em;word-spacing:.32em;
+  color:rgba(255,255,255,.075);line-height:1}
+.floor{position:absolute;left:0;right:0;top:var(--hor);bottom:0;
+  background:
+    radial-gradient(ellipse calc(var(--mw)*1.25) calc(var(--mh)*.17) at 50% calc(var(--pool) - var(--hor)),rgba(255,255,255,.115) 0%,rgba(255,255,255,.05) 45%,transparent 100%),
+    radial-gradient(ellipse 48% 90% at 50% 0%,rgba(255,255,255,.028),transparent 75%),
+    linear-gradient(to bottom,#0e0e0f 0%,#111113 35%,var(--bg) 100%)}
+.floor::before{content:"";position:absolute;inset:0;opacity:.07;mix-blend-mode:screen;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
+.floor::after{content:"";position:absolute;left:0;right:0;top:-24px;height:64px;background:linear-gradient(to bottom,rgba(13,13,14,0),rgba(10,10,11,.55) 40%,rgba(13,13,14,0))}
+
+/* ---------- model ---------- */
+.model{position:absolute;left:50%;top:var(--mtop);width:var(--mw);height:var(--mh);transform:translateX(-50%);z-index:20;pointer-events:none;opacity:0;transition:opacity 400ms var(--ease)}
+.model.ready{opacity:1}
+.model img{position:absolute;inset:0;width:100%;height:100%;opacity:0;will-change:opacity}
+.model img.on{opacity:1}
+.model img.in{transition:opacity var(--dur) cubic-bezier(.16,1,.3,1)}
+.model img.out{transition:opacity var(--dur) cubic-bezier(.55,0,1,.45)}
+
+/* ---------- carousel ---------- */
+.carousel{position:absolute;left:0;right:0;top:calc(var(--cardY) - 170px);height:340px;z-index:10;perspective:1300px;touch-action:none;cursor:grab;transition:opacity 220ms var(--ease)}
+.carousel.dragging{cursor:grabbing}
+.carousel.swap{opacity:0}
+.track{position:absolute;left:50%;top:50%;transform-style:preserve-3d}
+.card{position:absolute;left:calc(var(--cw) / -2);top:calc(var(--ch) / -2);width:var(--cw);height:var(--ch);will-change:transform,opacity}
+.card .inner{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;padding:14px 14px 16px;border-radius:16px;
+  background:var(--panel);border:1px solid var(--line);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+  transition:transform 240ms var(--ease),border-color 240ms var(--ease)}
+.card:hover .inner{transform:translateY(-4px);border-color:rgba(255,255,255,.16)}
+.card .shot{flex:1;width:100%;display:grid;place-items:center;border-radius:10px;
+  background:radial-gradient(closest-side,rgba(255,255,255,.075),rgba(255,255,255,0))}
+.card .shot img{width:86%;height:86%;object-fit:contain;pointer-events:none;-webkit-user-drag:none}
+.card .name{margin-top:12px;font-size:15px;font-weight:500;letter-spacing:-.005em;text-align:center}
+.card .desc{margin-top:4px;font-size:12.5px;color:var(--muted);text-align:center}
+:root{--cw:188px;--ch:252px}
+
+.arrow{position:absolute;top:var(--cardY);transform:translateY(-50%);z-index:30;width:40px;height:40px;border-radius:999px;display:grid;place-items:center;
+  background:var(--panel);border:1px solid var(--line);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);color:var(--text);transition:background 220ms var(--ease)}
+.arrow:hover{background:rgba(44,44,47,.85)}
+.arrow.prev{left:92px}.arrow.next{right:28px}
+
+/* ---------- chrome ---------- */
+.brand{position:fixed;left:28px;top:26px;z-index:40;display:flex;align-items:baseline;gap:12px}
+.brand b{font-size:13px;font-weight:600;letter-spacing:.34em}
+.brand span{font-size:12px;color:var(--muted);letter-spacing:.06em}
+.tabs-wrap{position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:40;max-width:calc(100vw - 24px)}
+.tabs{display:flex;gap:2px;padding:4px;border-radius:999px;background:var(--panel);border:1px solid var(--line);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:none;padding:8px 18px;border-radius:999px;font-size:13px;letter-spacing:.02em;color:var(--muted);transition:background 250ms var(--ease),color 250ms var(--ease)}
+.tab:hover{color:var(--text)}
+.tab[aria-selected="true"]{background:#fff;color:#0B0B0C;font-weight:500}
+
+.rail{position:fixed;left:24px;top:50%;transform:translateY(-50%);z-index:40;display:flex;flex-direction:column;gap:6px;padding:6px;border-radius:999px;background:var(--panel);border:1px solid var(--line);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+.rail button{width:40px;height:40px;border-radius:999px;display:grid;place-items:center;color:var(--muted);transition:color 220ms var(--ease),background 220ms var(--ease)}
+.rail button:hover{color:var(--text)}
+.rail button.on{background:#fff;color:#0B0B0C}
+
+.detail{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:40;display:flex;align-items:center;gap:20px;height:76px;padding:0 12px 0 12px;border-radius:20px;
+  background:var(--panel);border:1px solid var(--line);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+.d-main{display:flex;align-items:center;gap:14px;min-width:236px}
+.thumb{width:52px;height:52px;border-radius:12px;background:#202022 radial-gradient(closest-side,rgba(255,255,255,.08),transparent);display:grid;place-items:center;flex:none}
+.thumb img{width:84%;height:84%;object-fit:contain}
+.d-name{font-size:15px;font-weight:500;white-space:nowrap}
+.d-desc{font-size:13px;color:var(--muted);margin-top:3px;white-space:nowrap}
+.sep{width:1px;height:36px;background:var(--line)}
+.d-group{display:flex;flex-direction:column;gap:7px}
+.d-group .label{font-size:11px}
+.sizes,.colors{display:flex;gap:6px;align-items:center}
+.size{min-width:34px;height:28px;padding:0 9px;border-radius:999px;font-size:12px;font-weight:500;color:#C9C9CC;border:1px solid rgba(255,255,255,.12);transition:background 200ms var(--ease),color 200ms var(--ease),border-color 200ms var(--ease)}
+.size:hover{border-color:rgba(255,255,255,.3);color:#fff}
+.size.on{background:#fff;color:#0B0B0C;border-color:#fff}
+.color{width:28px;height:28px;border-radius:999px;display:grid;place-items:center;border:1px solid transparent;transition:border-color 200ms var(--ease)}
+.color i{width:16px;height:16px;border-radius:999px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.22)}
+.color.on{border-color:rgba(255,255,255,.85)}
+.d-color-name{font-size:12px;color:var(--muted);margin-left:4px;min-width:84px}
+.add{height:44px;padding:0 18px;border-radius:14px;background:#fff;color:#0B0B0C;font-size:13px;font-weight:500;letter-spacing:.01em;display:flex;align-items:center;gap:8px;white-space:nowrap;transition:transform 200ms var(--ease),background 200ms var(--ease)}
+.add:hover{background:#E6E6E8}
+.add:active{transform:scale(.97)}
+
+/* ---------- mobile ---------- */
+@media (max-width:768px){
+  .brand,.rail,.arrow{display:none}
+  .tabs-wrap{top:12px;left:12px;right:12px;transform:none;max-width:none;display:flex;justify-content:center}
+  .tabs{max-width:100%}
+  .tab{padding:8px 15px}
+  :root{--cw:132px;--ch:180px}
+  .carousel{height:200px;top:calc(var(--cardY) - 100px);perspective:none}
+  .card .inner{padding:10px 10px 12px;border-radius:14px}
+  .card .name{font-size:13px;margin-top:8px}
+  .card .desc{font-size:11px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .card.center .inner{border-color:rgba(255,255,255,.28)}
+  .detail{left:10px;right:10px;bottom:10px;transform:none;height:auto;flex-wrap:wrap;gap:12px 14px;padding:12px;border-radius:18px;padding-bottom:calc(12px + env(safe-area-inset-bottom))}
+  .d-main{flex:1 1 100%;min-width:0}
+  .d-main .d-text{flex:1;min-width:0}
+  .d-name,.d-desc{overflow:hidden;text-overflow:ellipsis}
+  .sep{display:none}
+  .d-group{flex-direction:row;align-items:center;gap:8px}
+  .d-group .label{display:none}
+  .d-color-name{display:none}
+  .size{min-width:30px;height:28px;padding:0 7px}
+  .add{height:40px;padding:0 14px;margin-left:auto}
+  .add .t{display:none}
+}
+@media (prefers-reduced-motion:reduce){:root{--dur:1ms}}
+</style>
+</head>
+<body>
+<main class="stage" id="stage">
+  <div class="wall"><div class="wordmark" id="wordmark" aria-hidden="true"></div></div>
+  <div class="floor"></div>
+  <div class="carousel" id="carousel" aria-roledescription="carousel"><div class="track" id="track"></div></div>
+  <div class="model" id="model"><img alt="" id="imgA"><img alt="" id="imgB"></div>
+  <button class="arrow prev" id="prev" aria-label="Previous product"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+  <button class="arrow next" id="next" aria-label="Next product"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
+</main>
+
+<div class="brand"><b>DVRS</b><span>Fitting Room</span></div>
+
+<nav class="tabs-wrap"><div class="tabs" role="tablist" id="tabs"></div></nav>
+
+<nav class="rail" aria-label="Sections">
+  <button class="on" aria-label="Wardrobe"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5a1.75 1.75 0 1 1 1.75-1.75c0 .9-.6 1.3-1.2 1.7-.35.23-.55.5-.55.9v.4"/><path d="M12 7.8 3.4 13.6c-.9.6-.5 2 .6 2h16c1.1 0 1.5-1.4.6-2L12 7.8z"/></svg></button>
+  <button aria-label="Bag"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14l-1 12H6L5 8z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/></svg></button>
+  <button aria-label="Saved"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4h10v16l-5-3.5L7 20V4z"/></svg></button>
+  <button aria-label="Profile"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c1.2-3.5 4-5 7-5s5.8 1.5 7 5"/></svg></button>
+</nav>
+
+<section class="detail" id="detail" aria-live="polite">
+  <div class="d-main">
+    <div class="thumb"><img id="dThumb" alt=""></div>
+    <div class="d-text"><div class="d-name" id="dName"></div><div class="d-desc" id="dDesc"></div></div>
+  </div>
+  <div class="sep"></div>
+  <div class="d-group"><span class="label">Size</span><div class="sizes" id="dSizes"></div></div>
+  <div class="sep"></div>
+  <div class="d-group"><span class="label">Color</span><div class="colors" id="dColors"></div></div>
+  <button class="add" aria-label="Add to bag"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span class="t">Add to bag</span></button>
+</section>
+
+<script>
+(() => {
+const SWATCH = { 'Black':'#0A0A0B', 'Charcoal':'#3A3A3E', 'Deep graphite':'#2B2E33' };
+const SIZES = ['XS','S','M','L','XL'];
+const CATS = [
+  { id:'bottoms', label:'Bottoms', items:[
+    { n:5,  name:'Wide-Leg Cargo',   desc:'Relaxed, utility pockets',   colors:['Black','Charcoal'] },
+    { n:6,  name:'Pleated Trousers', desc:'High rise, pressed crease',  colors:['Black','Deep graphite'] },
+    { n:7,  name:'Leather Pants',    desc:'Matte leather, straight leg', colors:['Black'] },
+    { n:8,  name:'Parachute Pants',  desc:'Crinkle nylon, toggle cuffs', colors:['Black','Charcoal'] } ]},
+  { id:'outerwear', label:'Outerwear', items:[
+    { n:1,  name:'Quilted Puffer',   desc:'Padded, drawstring',          colors:['Black','Charcoal'] },
+    { n:2,  name:'Shell Jacket',     desc:'Taped seams, packable hood',  colors:['Black','Deep graphite'] },
+    { n:3,  name:'Wool Overcoat',    desc:'Single-breasted, knee length', colors:['Black','Charcoal'] },
+    { n:4,  name:'Cropped Bomber',   desc:'Matte nylon, ribbed trims',   colors:['Black'] } ]},
+  { id:'shoes', label:'Shoes', items:[
+    { n:9,  name:'Chunky Leather Sneakers', desc:'Lugged sole, full grain', colors:['Black'] },
+    { n:10, name:'Square-Toe Boots', desc:'Block heel, side zip',        colors:['Black','Deep graphite'] },
+    { n:11, name:'Derby Shoes',      desc:'Polished leather, lace-up',   colors:['Black'] },
+    { n:12, name:'High-Top Trainers', desc:'Leather upper, padded collar', colors:['Black','Charcoal'] } ]},
+  { id:'accessories', label:'Accessories', items:[
+    { n:13, name:'Leather Barrel Bag', desc:'Top handles, zip close',    colors:['Black','Charcoal'] },
+    { n:14, name:'Quilted Bucket Bag', desc:'Padded, drawstring',        colors:['Black'] },
+    { n:15, name:'Hard-Shell Carry-On', desc:'Cabin size, spinner',      colors:['Black','Deep graphite'] },
+    { n:16, name:'Crossbody Sling',    desc:'Nylon, adjustable strap',   colors:['Black','Charcoal'] } ]},
+];
+const pad = n => String(n).padStart(2,'0');
+const lookSrc = n => `looks/look${pad(n)}.webp`;
+const shotSrc = n => `products/p${pad(n)}.webp`;
+CATS.forEach(c => c.items.forEach(it => { it.size = 'M'; it.color = it.colors[0]; }));
+
+// Image geometry of every look (all share one canvas, 1080x1910)
+const G = { ratio:1080/1910, head:.027, feet:.975, horizon:.688, pool:.952 };
+
+const $ = id => document.getElementById(id);
+const root = document.documentElement, stage = $('stage'), track = $('track'), carousel = $('carousel');
+const model = $('model'), imgs = [$('imgA'), $('imgB')];
+const mod = (a,n) => ((a % n) + n) % n;
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- preload (all looks + shots) ---------- */
+const cache = {};
+function preload(src){
+  if (!cache[src]) { const im = new Image(); im.decoding = 'async'; im.src = src;
+    cache[src] = (im.decode ? im.decode() : new Promise(r => im.onload = r)).catch(()=>{}).then(() => im); }
+  return cache[src];
+}
+
+/* ---------- layout ---------- */
+let L = {};
+function layout(){
+  const vw = innerWidth, vh = innerHeight, mobile = vw <= 768;
+  let mh, mtop, cardY;
+  if (!mobile) {
+    const headY = 76, feetY = vh - 112;
+    mh = Math.max(420, (feetY - headY) / (G.feet - G.head));
+    mtop = headY - G.head * mh;
+    cardY = mtop + .40 * mh;
+  } else {
+    const headY = 64, rowH = 198, detailH = 132;
+    mh = Math.max(330, (vh - headY - rowH - detailH - 6) / (G.feet - G.head));
+    mtop = headY - G.head * mh;
+    cardY = mtop + G.feet * mh + 10 + 92;
+  }
+  const mw = mh * G.ratio;
+  L = { vw, vh, mobile, mh, mw, mtop, cardY,
+        A: Math.max(236, mw * .56), B: Math.min(190, Math.max(150, vw * .12)),
+        unit: mobile ? 132 + 12 : Math.max(236, mw * .56) };
+  const set = (k,v) => root.style.setProperty(k, v + 'px');
+  set('--mh', mh); set('--mw', mw); set('--mtop', mtop); set('--cardY', cardY);
+  set('--hor', mtop + G.horizon * mh); set('--pool', mtop + G.pool * mh);
+  buildWordmark();
+  render();
+}
+
+function buildWordmark(){
+  const wm = $('wordmark'); wm.innerHTML = '';
+  const fs = L.mh * (L.mobile ? .1 : .118), gap = fs * 1.14, hor = L.mtop + G.horizon * L.mh;
+  const rows = Math.ceil(hor / gap) + 1, per = (Math.ceil(L.vw / (fs * 3.3)) + 3) | 1;
+  const word = Array(per).fill('DVRS').join(' ');
+  for (let r = 0; r < rows; r++) {
+    const d = document.createElement('div'); d.className = 'row'; d.textContent = word;
+    d.style.fontSize = fs + 'px';
+    d.style.top = (hor - fs * .86 - (rows - 1 - r) * gap) + 'px';     // rows anchored to the floor line
+    d.style.transform = `translateX(calc(-50% + ${r % 2 ? fs * 1.68 : 0}px))`;
+    wm.appendChild(d);
+  }
+}
+
+/* ---------- carousel state ---------- */
+let cat = CATS[1], items = cat.items, pos = 0, active = -1;
+const nodes = new Map();   // virtual index -> element
+
+function cardEl(vi){
+  const it = items[mod(vi, items.length)];
+  const el = document.createElement('div'); el.className = 'card'; el.dataset.vi = vi;
+  el.innerHTML = `<button class="inner" tabindex="-1" aria-label="Try on ${it.name}"><div class="shot"><img src="${shotSrc(it.n)}" alt="" draggable="false"></div><div class="name">${it.name}</div><div class="desc">${it.desc}</div></button>`;
+  return el;
+}
+
+function place(el, o){
+  const ao = Math.abs(o), s = Math.sign(o);
+  let x, sc, op, ry = 0, tz = 0;
+  if (!L.mobile) {
+    x  = s * (ao <= 1 ? ao * L.A : L.A + (ao - 1) * L.B);
+    sc = ao <= 1 ? .9 + .1 * ao : 1 - .13 * (ao - 1);
+    op = ao <= 1 ? Math.pow(ao, 2.2) : ao <= 3 ? 1 - .3 * (ao - 1) : Math.max(0, .4 * (1 - (ao - 3) / .6));
+    ry = s * Math.min(ao, 3) * 9; tz = -Math.min(ao, 3.5) * 70;
+  } else {
+    x  = o * L.unit;
+    sc = 1 - .09 * Math.min(ao, 2);
+    op = ao <= 2 ? 1 - .32 * ao : Math.max(0, .36 * (1 - (ao - 2) / .7));
+  }
+  el.style.transform = `translate3d(${x}px,0,${tz}px) rotateY(${ry}deg) scale(${sc})`;
+  el.style.opacity = op.toFixed(3);
+  el.style.zIndex = 100 - Math.round(ao * 10);
+  const live = L.mobile ? ao < 2.5 : ao > .5 && ao < 3.4;
+  el.style.pointerEvents = live ? 'auto' : 'none';
+  el.classList.toggle('center', ao < .5);
+}
+
+function render(){
+  const lo = Math.floor(pos) - 4, hi = Math.ceil(pos) + 4;
+  for (const [vi, el] of nodes) if (vi < lo || vi > hi) { el.remove(); nodes.delete(vi); }
+  for (let vi = lo; vi <= hi; vi++) {
+    let el = nodes.get(vi);
+    if (!el) { el = cardEl(vi); nodes.set(vi, el); track.appendChild(el); }
+    place(el, vi - pos);
+  }
+  const a = mod(Math.round(pos), items.length);
+  if (a !== active) { active = a; applyProduct(items[a]); }
+}
+
+/* ---------- motion ---------- */
+let anim = null;
+function animateTo(target, dur = 380){
+  cancelAnimationFrame(anim);
+  const from = pos, t0 = performance.now();
+  if (reduce || from === target) { pos = target; render(); return; }
+  const ease = t => 1 - Math.pow(1 - t, 3);
+  const step = now => {
+    const t = Math.min(1, (now - t0) / dur);
+    pos = from + (target - from) * ease(t); render();
+    if (t < 1) anim = requestAnimationFrame(step);
+  };
+  anim = requestAnimationFrame(step);
+}
+let target = 0;
+const go = d => { target = Math.round(target) + d; animateTo(target); };
+$('prev').onclick = () => go(-1);
+$('next').onclick = () => go(1);
+addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); go(1); }
+});
+
+/* drag / swipe / click */
+let drag = null;
+carousel.addEventListener('pointerdown', e => {
+  cancelAnimationFrame(anim);
+  const card = e.target.closest('.card');
+  drag = { x: e.clientX, p: pos, card, moved: 0, t: performance.now(), vx: 0, lx: e.clientX, lt: performance.now() };
+  carousel.setPointerCapture(e.pointerId);
+});
+carousel.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x; drag.moved = Math.max(drag.moved, Math.abs(dx));
+  if (drag.moved > 5) carousel.classList.add('dragging');
+  const now = performance.now(); drag.vx = (e.clientX - drag.lx) / Math.max(1, now - drag.lt); drag.lx = e.clientX; drag.lt = now;
+  pos = drag.p - dx / L.unit; target = pos; render();
+});
+const end = e => {
+  if (!drag) return;
+  carousel.classList.remove('dragging');
+  if (drag.moved <= 5) {
+    if (drag.card) { target = +drag.card.dataset.vi; animateTo(target); }
+    else animateTo(Math.round(pos));
+  } else {
+    const fling = Math.max(-2, Math.min(2, -drag.vx * 180 / L.unit));
+    target = Math.round(pos + fling); animateTo(target, 360);
+  }
+  drag = null;
+};
+carousel.addEventListener('pointerup', end);
+carousel.addEventListener('pointercancel', end);
+
+/* ---------- look crossfade ---------- */
+let front = 0, token = 0;
+async function showLook(src){
+  const my = ++token;
+  const im = await preload(src);
+  if (my !== token) return;
+  const cur = imgs[front], nxt = imgs[1 - front];
+  if (cur.getAttribute('src') === src && cur.classList.contains('on')) return;
+  nxt.classList.remove('in','out','on'); cur.classList.remove('in');
+  nxt.src = im.src;
+  void nxt.offsetWidth;                     // commit start state
+  nxt.classList.add('in','on');             // new look eases in on top
+  cur.classList.add('out'); cur.classList.remove('on');  // old look lags out, so her body never dips
+  front = 1 - front;
+  model.classList.add('ready');
+}
+
+/* ---------- detail bar ---------- */
+function applyProduct(it){
+  showLook(lookSrc(it.n));
+  model.querySelector('img.on, img')?.setAttribute('alt', `ichi_x wearing the ${it.name}`);
+  imgs.forEach(i => i.alt = `ichi_x wearing the ${it.name}`);
+  $('dThumb').src = shotSrc(it.n);
+  $('dName').textContent = it.name;
+  $('dDesc').textContent = it.desc;
+  const sz = $('dSizes'); sz.innerHTML = '';
+  SIZES.forEach(s => {
+    const b = document.createElement('button'); b.className = 'size' + (s === it.size ? ' on' : ''); b.textContent = s;
+    b.setAttribute('aria-pressed', s === it.size);
+    b.onclick = () => { it.size = s; sz.querySelectorAll('.size').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', x === b); }); };
+    sz.appendChild(b);
+  });
+  const cl = $('dColors'); cl.innerHTML = '';
+  const lbl = document.createElement('span'); lbl.className = 'd-color-name'; lbl.textContent = it.color;
+  it.colors.forEach(c => {
+    const b = document.createElement('button'); b.className = 'color' + (c === it.color ? ' on' : '');
+    b.setAttribute('aria-label', c); b.title = c; b.innerHTML = `<i style="background:${SWATCH[c]}"></i>`;
+    b.onclick = () => { it.color = c; lbl.textContent = c; cl.querySelectorAll('.color').forEach(x => x.classList.toggle('on', x === b)); };
+    cl.appendChild(b);
+  });
+  cl.appendChild(lbl);
+}
+
+/* ---------- tabs ---------- */
+const tabs = $('tabs');
+const ORDER = ['bottoms','outerwear','shoes','accessories'];
+ORDER.forEach(id => {
+  const c = CATS.find(x => x.id === id);
+  const b = document.createElement('button'); b.className = 'tab'; b.role = 'tab'; b.textContent = c.label;
+  b.setAttribute('aria-selected', c === cat);
+  b.onclick = () => selectCat(c, b);
+  tabs.appendChild(b);
+});
+function selectCat(c, btn){
+  if (c === cat) return;
+  tabs.querySelectorAll('.tab').forEach(t => t.setAttribute('aria-selected', t === btn));
+  btn.scrollIntoView({ inline:'center', block:'nearest', behavior: reduce ? 'auto' : 'smooth' });
+  carousel.classList.add('swap');
+  cat = c; items = c.items;
+  showLook(lookSrc(items[0].n));          // apply the first item straight away
+  setTimeout(() => {
+    cancelAnimationFrame(anim);
+    nodes.forEach(el => el.remove()); nodes.clear();
+    pos = 0; target = 0; active = -1; render();
+    carousel.classList.remove('swap');
+  }, reduce ? 0 : 220);
+}
+
+/* ---------- boot ---------- */
+addEventListener('resize', layout);
+layout();
+CATS.forEach(c => c.items.forEach(it => { preload(lookSrc(it.n)); preload(shotSrc(it.n)); }));
+document.fonts && document.fonts.ready.then(buildWordmark);
+})();
+</script>
+</body>
+</html>
